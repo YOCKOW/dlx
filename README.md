@@ -10,6 +10,7 @@ It is available to verify the downloaded file with its hash before extracting.
 * [cURL](https://curl.se)
 * Hash tools
     - MD5: `md5`, `md5sum`, `gmd5sum`, or `openssl`
+    - SHA1: `sha1sum`, `gsha1sum`, or `openssl`
 * OS: macOS/Linux
 
 
@@ -29,7 +30,10 @@ It is available to verify the downloaded file with its hash before extracting.
 
 ```console
 % mod_fcgid_url="https://dlcdn.apache.org/httpd/mod_fcgid/mod_fcgid-2.3.9.tar.gz"
-% dlx "$mod_fcgid_url" --md5 "$mod_fcgid_url.md5" --dir ./my-fcgid-directory
+% dlx "$mod_fcgid_url" \
+  --md5 "$mod_fcgid_url.md5" \
+  --sha1 "$mod_fcgid_url.sha1" \
+  --dir ./my-fcgid-directory
 ```
 
 # License

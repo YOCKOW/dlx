@@ -49,6 +49,9 @@ function view_help() {
   echo "--md5 <MD5 Hash/URL>"
   echo "    Verify the downloaded file with the given MD5 hash."
   echo "    URL can be passed to specify MD5 hash."
+  echo "--sha1 <SHA1 Hash/URL>"
+  echo "    Verify the downloaded file with the given SHA1 hash."
+  echo "    URL can be passed to specify SHA1 hash."
   echo ""
   echo "Supported File Types:"
   echo "    ${(j:\n    :)supported_file_types}"
@@ -81,6 +84,8 @@ zparseopts -D -E -M -A parsed_arguments -- \
   d: -dir:=d -downloads-directory:=d \
   y -yes=y -assume-yes=y \
   -md5: \
+  -sha1: \
+
 
 if [[ $# -lt 1 ]]; then
   fatal_error "No URL was given."
@@ -126,6 +131,15 @@ function verbose_print() {
     __verbose_print_body "$1"
   else
     function verbose_print() { : }
+  fi
+}
+
+function quiet_print() {
+  if is_quiet; then
+    function quiet_print() { : }
+  else
+    function quiet_print() { echo "$1" }
+    echo "$1"
   fi
 }
 
@@ -210,9 +224,12 @@ function command_exists() {
 
 ## Hash (Digest) Utils
 local -r md5_hash_name="MD5"
+local -r sha1_hash_name="SHA1"
 local -r -A hash_expressions=(
   [$md5_hash_name]="[0-9A-Fa-f]{32}"
+  [$sha1_hash_name]="[0-9A-Fa-f]{40}"
 )
+
 function extract_digest() {
   local -r name="$1"
   local -r line="$2"
@@ -258,22 +275,68 @@ function md5_digest() {
   fatal_error "MD5 Hash tool not found"
 }
 
-## Determine Verifiers
-local md5_verifier_key="$md5_hash_name"
-local -A verifiers=()
-
-if [[ -n "${parsed_arguments[(i)--md5]}" ]]; then
-  local md5_hash="${parsed_arguments[--md5]#=}"
-  if [[ ! "$md5_hash" =~ "^${hash_expressions[$md5_hash_name]}$" ]]; then
-    if [[ ! "$md5_hash" =~ "^(https?|file|ftp)://" ]]; then
-      fatal_error "Invalid Argument: --md5 \"$md5_hash\""
-    fi
-    verbose_print "Fetch MD5 Digest..."
-    md5_hash=$(extract_digest "$md5_hash_name" "$(curl -L -s "$md5_hash")")
+function sha1_digest() {
+  local -r filename="$1"
+  if [[ ! -f "$filename" ]]; then
+    fatal_error "No such file: $filename"
   fi
-  verifiers[$md5_verifier_key]="$md5_hash"
-  verbose_print "Expected MD5 Hash: ${verifiers[$md5_verifier_key]}"
-fi
+
+  if command_exists sha1sum; then
+    echo $(extract_digest "$sha1_hash_name" "$(sha1sum "$filename")")
+    return 0
+  elif command_exists gsha1sum; then
+    echo $(extract_digest "$sha1_hash_name" "$(gsha1sum "$filename")")
+    return 0
+  elif command_exists openssl; then
+    echo $(extract_digest "$sha1_hash_name" "$(openssl dgst -sha1 "$filename")")
+    return 0
+  fi
+  fatal_error "SHA1 Hash tool not found"
+}
+
+function digest() {
+  local -r hash_name="$1"
+  local -r file_path="$2"
+
+  case "$hash_name" in
+    $md5_hash_name)
+      md5_digest "$file_path"
+      ;;
+    $sha1_hash_name)
+      sha1_digest "$file_path"
+      ;;
+    *)
+      fatal_error "Digest Failed: Unexpected Hash Name: $hash_name"
+      ;;
+  esac
+}
+
+## Determine Verifiers
+local -A verifiers=()
+function determine_hash() {
+  local -r flag_name="$1"
+  local -r hash_name="$2"
+
+  if [[ -z "${parsed_arguments[(i)$flag_name]}" ]]; then
+    return 0
+  fi
+
+  local -r flag_value="${parsed_arguments[$flag_name]#=}"
+  local hash_value=""
+  if [[ "$flag_value" =~ "^${hash_expressions[$hash_name]}$" ]]; then
+    hash_value="$flag_value"
+  else
+    if [[ ! "$flag_value" =~ "^(https?|file|ftp)://" ]]; then
+      fatal_error "Invalid Argument: $flag_name \"$flag_value\""
+    fi
+    verbose_print "Fetch $hash_name Digest..."
+    hash_value=$(extract_digest "$hash_name" "$(curl -L -s "$flag_value")")
+  fi
+  verifiers[$hash_name]="$hash_value"
+  verbose_print "Expected $hash_name Hash: ${verifiers[$hash_name]}"
+}
+determine_hash --md5 $md5_hash_name
+determine_hash --sha1 $sha1_hash_name
 
 ## Require verifiers?
 if [[ ${#verifiers} -eq 0 ]]; then
@@ -429,22 +492,30 @@ fi
 
 local number_of_verification_failures=0
 
-## MD5
-if [[ -n "${verifiers[(i)$md5_verifier_key]}" ]]; then
-  verbose_print "Compare MD5 checksum..."
-  local -r -l expected_md5="${verifiers[$md5_verifier_key]}"
-  local -r -l actual_md5=$(md5_digest "$local_file_path")
-  if ! is_quiet; then
-    if [[ "$expected_md5" == "$actual_md5" ]]; then
-      echo "MD5: ✅ OK" 1>&2
-    else
-      number_of_verification_failures=$(( $number_of_verification_failures + 1 ))
-      echo "MD5: ❌ NG" 1>&2
-      echo "  Expected \"$expected_md5\", but got \"$actual_md5\""
-    fi
+## Hash
+function compare_hash() {
+  local -r hash_name="$1"
+  if [[ -z "${verifiers[(i)$hash_name]}" ]]; then
+    return 0
   fi
-fi
 
+  verbose_print "Compare $hash_name checksum..."
+  local -r -l expected_hash_value="${verifiers[$hash_name]}"
+  local -r -l actual_hash_value=$(digest "$hash_name" "$local_file_path")
+  if [[ "$expected_hash_value" == "$actual_hash_value" ]]; then
+    quiet_print "$hash_name: ✅ OK" 1>&2
+  else
+    number_of_verification_failures=$(( $number_of_verification_failures + 1 ))
+    quiet_print "$hash_name: ❌ NG" 1>&2
+    quiet_print "  Expected \"$expected_hash_value\", but got \"$actual_hash_value\"" 1>&2
+  fi
+}
+function () {
+  local hash_name
+  for hash_name ("$md5_hash_name" "$sha1_hash_name"); do
+    compare_hash $hash_name
+  done
+}
 
 ## Results
 if [[ $number_of_verification_failures -ne 0 ]]; then

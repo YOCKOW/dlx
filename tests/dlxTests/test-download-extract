@@ -30,7 +30,12 @@ function test_download_extract() {
   local -r file_method_desc="file(${file})+method(${method})"
 
   dlx -q -y "file://${DLX_TEST_ASSETS_DIR}/$file" $method "$checksum_for_arg" --dir "$test_tmp_dir"
-  SSTAssertIntegerEqual $? 0 "${file_method_desc} failed." -l $line
+  local -r dlx_exit_status=$?
+  SSTAssertIntegerEqual $dlx_exit_status 0 "${file_method_desc} failed." -l $line
+  if [[ $dlx_exit_status -ne 0 ]]; then
+    return $dlx_exit_status
+  fi
+
   if [[ ! -f "${test_tmp_dir}/file1.txt" ]]; then
     SSTFail "${file_method_desc}: \"file1.txt\" not found." -l $line
   fi
@@ -53,3 +58,4 @@ function test_download_extract() {
 }
 
 test_download_extract files.tar.bz2 --md5 file:files.tar.bz2.md5 ${(%):-%I}
+test_download_extract files.tar.gz --sha1 file:files.tar.gz.sha1 ${(%):-%I}
