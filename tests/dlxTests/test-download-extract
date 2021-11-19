@@ -60,3 +60,4 @@ function test_download_extract() {
 test_download_extract files.tar.bz2 --md5 file:files.tar.bz2.md5 ${(%):-%I}
 test_download_extract files.tar.gz --sha1 file:files.tar.gz.sha1 ${(%):-%I}
 test_download_extract files.tar.xz --sha256 file:files.tar.xz.sha256 ${(%):-%I}
+test_download_extract files.tar.Z --sha512 file:files.tar.Z.sha512 ${(%):-%I}

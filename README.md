@@ -12,6 +12,7 @@ It is available to verify the downloaded file with its hash before extracting.
     - MD5: `md5`, `md5sum`, `gmd5sum`, or `openssl`
     - SHA1: `sha1sum`, `gsha1sum`, or `openssl`
     - SHA256: `sha256sum`, `gsha256sum`, or `openssl`
+    - SHA512: `sha512sum`, `gsha512sum`, or `openssl`
 * OS: macOS/Linux
 
 
