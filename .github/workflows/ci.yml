@@ -1,0 +1,37 @@
+name: CI
+on:
+  push:
+    branches:
+      - '**'
+    tags-ignore:
+      - '**'
+    paths:
+      - 'bin/**'
+      - 'tests/**'
+      - '.github/workflows/*.yml'
+  pull_request:
+    paths:
+      - 'bin/**'
+      - 'tests/**'
+      - '.github/workflows/*.yml'
+jobs:
+  test:
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - macOS-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install zsh
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt update
+        sudo apt install zsh
+    - name: Run Tests
+      run: make test
+    - name: Install dlx
+      run: |
+        sudo make install
+        which dlx

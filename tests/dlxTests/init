@@ -1,0 +1,20 @@
+#!/usr/bin/env zsh
+
+################################################################################
+# init
+#   © 2021 YOCKOW.
+#     Licensed under MIT License.
+#     See "LICENSE.txt" for more information.
+################################################################################
+
+dlxTests_dir=$(cd "$(dirname "$0")" && pwd)
+tests_dir=$(dirname "$dlxTests_dir")
+repo_dir=$(dirname "$tests_dir")
+dlx_bin_dir="${repo_dir}/bin"
+dlx_test_assets_dir="${repo_dir}/test-assets"
+
+PATH="${dlx_bin_dir}:$PATH"
+
+SSTExport PATH "$PATH"
+SSTExport DLX_REPOSITORY_DIR "$repo_dir"
+SSTExport DLX_TEST_ASSETS_DIR "$dlx_test_assets_dir"

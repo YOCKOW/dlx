@@ -1,0 +1,16 @@
+#!/usr/bin/env zsh
+
+local utils_dir=$(cd "$(dirname "$0")" && pwd)
+local repo_dir=$(dirname "$utils_dir")
+local SSTest_dir="${repo_dir}/.SSTest"
+
+echo "Prepare \`SSTest\`."
+if ! command -v SSTest 1>/dev/null 2>&1; then
+  "${utils_dir}/clone-SSTest"
+  cd "$SSTest_dir"
+  make build
+  PATH="${SSTest_dir}/bin:$PATH"
+  export PATH
+fi
+
+SSTest "${repo_dir}/tests"
