@@ -52,6 +52,9 @@ function view_help() {
   echo "--sha1 <SHA1 Hash/URL>"
   echo "    Verify the downloaded file with the given SHA1 hash."
   echo "    URL can be passed to specify SHA1 hash."
+  echo "--sha256 <SHA256 Hash/URL>"
+  echo "    Verify the downloaded file with the given SHA256 hash."
+  echo "    URL can be passed to specify SHA256 hash."
   echo ""
   echo "Supported File Types:"
   echo "    ${(j:\n    :)supported_file_types}"
@@ -85,6 +88,7 @@ zparseopts -D -E -M -A parsed_arguments -- \
   y -yes=y -assume-yes=y \
   -md5: \
   -sha1: \
+  -sha256: \
 
 
 if [[ $# -lt 1 ]]; then
@@ -225,9 +229,11 @@ function command_exists() {
 ## Hash (Digest) Utils
 local -r md5_hash_name="MD5"
 local -r sha1_hash_name="SHA1"
+local -r sha256_hash_name="SHA256"
 local -r -A hash_expressions=(
   [$md5_hash_name]="[0-9A-Fa-f]{32}"
   [$sha1_hash_name]="[0-9A-Fa-f]{40}"
+  [$sha256_hash_name]="[0-9A-Fa-f]{64}"
 )
 
 function extract_digest() {
@@ -294,6 +300,25 @@ function sha1_digest() {
   fatal_error "SHA1 Hash tool not found"
 }
 
+function sha256_digest() {
+  local -r filename="$1"
+  if [[ ! -f "$filename" ]]; then
+    fatal_error "No such file: $filename"
+  fi
+
+  if command_exists sha256sum; then
+    echo $(extract_digest "$sha256_hash_name" "$(sha256sum "$filename")")
+    return 0
+  elif command_exists gsha256sum; then
+    echo $(extract_digest "$sha256_hash_name" "$(gsha256sum "$filename")")
+    return 0
+  elif command_exists openssl; then
+    echo $(extract_digest "$sha256_hash_name" "$(openssl dgst -sha256 "$filename")")
+    return 0
+  fi
+  fatal_error "SHA256 Hash tool not found"
+}
+
 function digest() {
   local -r hash_name="$1"
   local -r file_path="$2"
@@ -304,6 +329,9 @@ function digest() {
       ;;
     $sha1_hash_name)
       sha1_digest "$file_path"
+      ;;
+    $sha256_hash_name)
+      sha256_digest "$file_path"
       ;;
     *)
       fatal_error "Digest Failed: Unexpected Hash Name: $hash_name"
@@ -337,6 +365,7 @@ function determine_hash() {
 }
 determine_hash --md5 $md5_hash_name
 determine_hash --sha1 $sha1_hash_name
+determine_hash --sha256 $sha256_hash_name
 
 ## Require verifiers?
 if [[ ${#verifiers} -eq 0 ]]; then
@@ -512,7 +541,7 @@ function compare_hash() {
 }
 function () {
   local hash_name
-  for hash_name ("$md5_hash_name" "$sha1_hash_name"); do
+  for hash_name ("$md5_hash_name" "$sha1_hash_name" "$sha256_hash_name"); do
     compare_hash $hash_name
   done
 }
