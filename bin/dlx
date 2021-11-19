@@ -223,13 +223,6 @@ fi
 ################################################################################
 # Verifiers
 
-function command_exists() {
-  if command -v "$1" 1>/dev/null 2>&1; then
-    return 0
-  fi
-  return 1
-}
-
 ## Hash (Digest) Utils
 local -r md5_hash_name="MD5"
 local -r sha1_hash_name="SHA1"
@@ -241,6 +234,39 @@ local -r -A hash_expressions=(
   [$sha256_hash_name]="[0-9A-Fa-f]{64}"
   [$sha512_hash_name]="[0-9A-Fa-f]{128}"
 )
+local -r -A supported_hash_tools=(
+  [$md5_hash_name]="md5 md5sum gmd5sum openssl"
+  [$sha1_hash_name]="sha1sum gsha1sum openssl"
+  [$sha256_hash_name]="sha256sum gsha256sum openssl"
+  [$sha512_hash_name]="sha512sum gsha512sum openssl"
+)
+
+function command_exists() {
+  if command -v "$1" 1>/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+function hash_tool_exists() {
+  local -r hash_name="$1"
+  if [[ -z "${supported_hash_tools[(i)$hash_name]}" ]]; then
+    return 1
+  fi
+
+  local -r -a tools=(${(@s: :)supported_hash_tools[$hash_name]})
+  if [[ ${#tools} -eq 0 ]]; then
+    return 1
+  fi
+
+  local tool
+  for tool in $tools; do
+    if command_exists $tool; then
+      return 0
+    fi
+  done
+  return 1
+}
 
 function extract_digest() {
   local -r name="$1"
@@ -375,6 +401,10 @@ function determine_hash() {
 
   if [[ -z "${parsed_arguments[(i)$flag_name]}" ]]; then
     return 0
+  fi
+
+  if ! hash_tool_exists $hash_name; then
+    fatal_error "Hash tool for $hash_name is not found."
   fi
 
   local -r flag_value="${parsed_arguments[$flag_name]#=}"
