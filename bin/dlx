@@ -58,6 +58,9 @@ function view_help() {
   echo "--sha512 <SHA512 Hash/URL>"
   echo "    Verify the downloaded file with the given SHA512 hash."
   echo "    URL can be passed to specify SHA512 hash."
+  echo "--pgp <URL>"
+  echo "    Verify the downloaded file with the PGP signature"
+  echo "    that can be fetched from the given URL."
   echo ""
   echo "Supported File Types:"
   echo "    ${(j:\n    :)supported_file_types}"
@@ -93,6 +96,7 @@ zparseopts -D -E -M -A parsed_arguments -- \
   -sha1: \
   -sha256: \
   -sha512: \
+  -pgp: -gpg:=-pgp \
 
 
 if [[ $# -lt 1 ]]; then
@@ -394,6 +398,7 @@ function digest() {
 }
 
 ## Determine Verifiers
+local -r pgp_verifier_key="PGP"
 local -A verifiers=()
 function determine_hash() {
   local -r flag_name="$1"
@@ -425,6 +430,47 @@ determine_hash --md5 $md5_hash_name
 determine_hash --sha1 $sha1_hash_name
 determine_hash --sha256 $sha256_hash_name
 determine_hash --sha512 $sha512_hash_name
+
+## PGP
+local -r -a pgp_tools=(gpg)
+
+function pgp_tool_exists() {
+  local tool
+  for tool in $pgp_tools; do
+    if command_exists $tool; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+function pgp_verify() {
+  local -r filename="$1"
+  local -r signature_filename="$2"
+
+  if command_exists gpg; then
+    local gpg_exit_status=-1
+    if is_verbose; then
+      gpg --verify "$signature_filename" "$filename"
+      gpg_exit_status=$?
+    else
+      gpg --quiet --verify "$signature_filename" "$filename" 1>/dev/null 2>&1
+      gpg_exit_status=$?
+    fi
+    return $gpg_exit_status
+  fi
+  fatal_error "PGP tool not found"
+}
+
+if [[ -n "${parsed_arguments[(i)--pgp]}" ]]; then
+  if ! pgp_tool_exists; then
+    fatal_error "PGP tool not found"
+  fi
+
+  local -r pgp_signature_url="${parsed_arguments[--pgp]}"
+  verbose_print "PGP Signature URL: $pgp_signature_url"
+  verifiers[$pgp_verifier_key]="$pgp_signature_url"
+fi
 
 ## Require verifiers?
 if [[ ${#verifiers} -eq 0 ]]; then
@@ -603,6 +649,32 @@ function () {
   for hash_name ("$md5_hash_name" "$sha1_hash_name" "$sha256_hash_name"); do
     compare_hash $hash_name
   done
+}
+
+## PGP
+function () {
+  if [[ -n "${verifiers[(i)$pgp_verifier_key]}" ]]; then
+    local -r pgp_signature_url="${verifiers[$pgp_verifier_key]}"
+    verbose_print "Fetch PGP Signature..."
+    
+    local pgp_signature_ext
+    if [[ "$pgp_signature_url" == *.sig ]]; then
+      pgp_signature_ext="sig"
+    else
+      pgp_signature_ext="asc"
+    fi
+    local -r pgp_signature_filename="${last_path_component}.${pgp_signature_ext}"
+    local -r pgp_signature_file_path="$(dirname "$local_file_path")/$pgp_signature_filename"
+
+    curl -s -L "$pgp_signature_url" -o "$pgp_signature_file_path"
+
+    if pgp_verify "$local_file_path" "$pgp_signature_file_path"; then
+      quiet_print "PGP: ✅ OK" 1>&2
+    else
+      number_of_verification_failures=$(( $number_of_verification_failures + 1 ))
+      quiet_print "PGP: ❌ NG" 1>&2
+    fi
+  fi
 }
 
 ## Results
