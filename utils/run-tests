@@ -13,4 +13,19 @@ if ! command -v SSTest 1>/dev/null 2>&1; then
   export PATH
 fi
 
+local -r public_key_id="01F76899E9C1E5B003169A23BEEDB9712A367313"
+local has_public_key=true
+if ! gpg --list-keys $public_key_id 1>/dev/null 2>&1; then
+  echo "Import YOCKOW's Public Key (Temporarily)"
+  has_public_key=false
+
+  pub_key_file=$(mktemp)
+  curl -s -L "https://GitHub.com/YOCKOW.gpg" -o "$pub_key_file"
+  gpg --import "$pub_key_file"
+fi
+
 SSTest "${repo_dir}/tests"
+
+if [[ "$has_public_key" != "true" && ! -v GITHUB_ACTIONS ]]; then
+  gpg --yes --delete-keys $public_key_id
+fi

@@ -8,11 +8,13 @@ on:
     paths:
       - 'bin/**'
       - 'tests/**'
+      - 'utils/**'
       - '.github/workflows/*.yml'
   pull_request:
     paths:
       - 'bin/**'
       - 'tests/**'
+      - 'utils/**'
       - '.github/workflows/*.yml'
 jobs:
   test:
