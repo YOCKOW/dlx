@@ -1,7 +1,7 @@
 # What is `dlx`?
 
 It's a command line tool to **D**own**L**oad and e**X**tract files.  
-It is available to verify the downloaded file with its hash before extracting.
+It is available to verify the downloaded file with its hash and/or PGP signature before extracting.
 
 
 # Requirements
