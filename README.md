@@ -13,7 +13,17 @@ It is available to verify the downloaded file with its hash before extracting.
     - SHA1: `sha1sum`, `gsha1sum`, or `openssl`
     - SHA256: `sha256sum`, `gsha256sum`, or `openssl`
     - SHA512: `sha512sum`, `gsha512sum`, or `openssl`
+    - PGP: `gpg`
 * OS: macOS/Linux
+
+
+# How to install
+
+```console
+% git clone https://GitHub.com/YOCKOW/dlx.git
+% cd dlx
+% make test && sudo make install
+```
 
 
 # Usage
@@ -26,6 +36,9 @@ It is available to verify the downloaded file with its hash before extracting.
     --pgp=https://example.com/veryFantasticOtherTools.tar.gz.sig
 ```
 
+Try `dlx --help` to read more details.
+
+
 ## Samples
 
 ### Apache mod_fcgid FastCGI module
@@ -37,6 +50,14 @@ It is available to verify the downloaded file with its hash before extracting.
   --sha1 "$mod_fcgid_url.sha1" \
   --dir ./my-fcgid-directory
 ```
+
+### Swift Toolchain
+
+```console
+% swift_toolchain_url="https://download.swift.org/swift-5.5.1-release/ubuntu2004/swift-5.5.1-RELEASE/swift-5.5.1-RELEASE-ubuntu20.04.tar.gz"
+% dlx "$swift_toolchain_url" --pgp="$swift_toolchain_url.sig"
+```
+
 
 # License
 MIT License.  
