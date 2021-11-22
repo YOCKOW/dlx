@@ -1,0 +1,64 @@
+#!/usr/bin/env zsh
+
+################################################################################
+# test-download-extract
+#   © 2021 YOCKOW.
+#     Licensed under MIT License.
+#     See "LICENSE.txt" for more information.
+################################################################################
+
+set -u
+
+local tmp_dir=$(mktemp -d)
+
+function test_download_extract() {
+  local -r file="$1"
+  local -r method="$2"
+  local -r checksum="$3"
+  local -r line="$4"
+  
+  local -r test_tmp_dir="${tmp_dir}/${file}-${method}"
+  mkdir -p "$test_tmp_dir"
+
+  local checksum_for_arg
+  if [[ "$checksum" =~ "^file:(.+)$" ]]; then
+    checksum_for_arg="file://${DLX_TEST_ASSETS_DIR}/${match[1]}"
+  else
+    checksum_for_arg="$checksum"
+  fi
+
+  local -r file_method_desc="file(${file})+method(${method})"
+
+  dlx -q -y "file://${DLX_TEST_ASSETS_DIR}/$file" $method "$checksum_for_arg" --dir "$test_tmp_dir"
+  local -r dlx_exit_status=$?
+  SSTAssertIntegerEqual $dlx_exit_status 0 "${file_method_desc} failed." -l $line
+  if [[ $dlx_exit_status -ne 0 ]]; then
+    return $dlx_exit_status
+  fi
+
+  if [[ ! -f "${test_tmp_dir}/file1.txt" ]]; then
+    SSTFail "${file_method_desc}: \"file1.txt\" not found." -l $line
+  fi
+  if [[ ! -f "${test_tmp_dir}/file2.txt" ]]; then
+    SSTFail "${file_method_desc}: \"file2.txt\" not found." -l $line
+  fi
+  if [[ -f "${test_tmp_dir}/files.tar.bz2" ]]; then
+    SSTFail "${file_method_desc}: \"$file\" was not removed." -l $line
+  fi
+  SSTAssertStringEqual \
+    "$(cat "${DLX_TEST_ASSETS_DIR}/file1.txt")" \
+    "$(cat "${test_tmp_dir}/file1.txt")" \
+    "${file_method_desc}: Different contents of \"file1.txt\"" \
+    -l $line
+  SSTAssertStringEqual \
+    "$(cat "${DLX_TEST_ASSETS_DIR}/file2.txt")" \
+    "$(cat "${test_tmp_dir}/file2.txt")" \
+    "${file_method_desc}: Different contents of \"file2.txt\"" \
+    -l $line
+}
+
+test_download_extract files.tar.bz2 --md5 file:files.tar.bz2.md5 ${(%):-%I}
+test_download_extract files.tar.gz --sha1 file:files.tar.gz.sha1 ${(%):-%I}
+test_download_extract files.tar.xz --sha256 file:files.tar.xz.sha256 ${(%):-%I}
+test_download_extract files.tar.Z --sha512 file:files.tar.Z.sha512 ${(%):-%I}
+test_download_extract files.zip --pgp file:files.zip.asc ${(%):-%I}

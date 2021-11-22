@@ -1,0 +1,741 @@
+#!/usr/bin/env zsh
+
+################################################################################
+# dlx
+#   © 2021 YOCKOW.
+#     Licensed under MIT License.
+#     See "LICENSE.txt" for more information.
+################################################################################
+
+set -eu
+
+local -r VERSION="1.0.0"
+
+local command_name=$(basename "$0")
+
+local -r tar_bz2_file_type=".tar.bz2"
+local -r tar_gz_file_type=".tar.gz"
+local -r tgz_file_type=".tgz"
+local -r tar_xz_file_type=".tar.xz"
+local -r tar_Z_file_type=".tar.Z"
+local -r zip_file_type=".zip"
+local -r -a supported_file_types=(
+  $tar_bz2_file_type
+  $tar_gz_file_type
+  $tgz_file_type
+  $tar_xz_file_type
+  $tar_Z_file_type
+  $zip_file_type
+)
+
+function view_help() {
+  echo "Usage: ${command_name} <url> [options]"
+  echo ""
+  echo "Options:"
+  echo "-v/--verbose"
+  echo "    Use verbose output."
+  echo "-q/--quiet"
+  echo "    Use quiet output."
+  echo "-t/--file-type <file type>"
+  echo "    Regard the downloaded file as the given type."
+  echo "    Supported file types are below."
+  echo "    Default: \`auto'"
+  echo "-d/--dir <directory>"
+  echo "    The file(s) will be saved in the given directory."
+  echo "    Default: current directory."
+  echo "-y/--yes"
+  echo "    Automatic yes to prompts. Assume \"yes\" as answer "
+  echo "    to all prompts and run non-interactively."
+  echo "-l/--leave"
+  echo "    Don't remove the downloaded file even after extracted."
+  echo "--md5 <MD5 Hash/URL>"
+  echo "    Verify the downloaded file with the given MD5 hash."
+  echo "    URL can be passed to specify MD5 hash."
+  echo "--sha1 <SHA1 Hash/URL>"
+  echo "    Verify the downloaded file with the given SHA1 hash."
+  echo "    URL can be passed to specify SHA1 hash."
+  echo "--sha256 <SHA256 Hash/URL>"
+  echo "    Verify the downloaded file with the given SHA256 hash."
+  echo "    URL can be passed to specify SHA256 hash."
+  echo "--sha512 <SHA512 Hash/URL>"
+  echo "    Verify the downloaded file with the given SHA512 hash."
+  echo "    URL can be passed to specify SHA512 hash."
+  echo "--pgp <URL>"
+  echo "    Verify the downloaded file with the PGP signature"
+  echo "    that can be fetched from the given URL."
+  echo ""
+  echo "Supported File Types:"
+  echo "    ${(j:\n    :)supported_file_types}"
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  view_help
+  exit 0
+fi
+
+if [[ "${1:-}" == "--version" ]]; then
+  echo "$command_name version $VERSION"
+  exit 0
+fi
+
+function fatal_error_dont_exit() {
+  printf "\033[1;31mfatal error\033[m: %s\n" "$1" 1>&2
+}
+
+function fatal_error() {
+  fatal_error_dont_exit "$1"
+  exit 1
+}
+
+function warn() {
+  printf "\033[35mwarning\033[m: %s\n" "$1" 1>&2
+}
+
+local -A parsed_arguments
+zparseopts -D -E -M -A parsed_arguments -- \
+  v -verbose=v \
+  q -quiet=q \
+  D: -debug:=D \
+  t: -file-type:=t \
+  d: -dir:=d -downloads-directory:=d \
+  y -yes=y -assume-yes=y \
+  -md5: \
+  -sha1: \
+  -sha256: \
+  -sha512: \
+  -pgp: -gpg:=-pgp \
+
+
+if [[ $# -lt 1 ]]; then
+  fatal_error "No URL was given."
+elif [[ $# -gt 1 ]]; then
+  fatal_error "Too many arguments."
+fi
+
+local url="$1"
+local file_type=""
+local downloads_directory="$(cd "." && pwd)"
+local is_verbose_flag=false
+local is_quiet_flag=false
+local assume_yes_flag=false
+local should_leave=false
+local debug_mode=""
+
+function is_verbose() {
+  if [[ "$is_verbose_flag" == "true" ]]; then
+    function is_verbose() { return 0 }
+    return 0
+  else
+    function is_verbose() { return 1 }
+    return 1
+  fi
+}
+
+function is_quiet() {
+  if [[ "$is_quiet_flag" == "true" ]]; then
+    function is_quiet() { return 0 }
+    return 0
+  else
+    function is_quiet() { return 1 }
+    return 1
+  fi
+}
+
+function verbose_print() {
+  function __verbose_print_body() {
+    printf "\033[2m%s\033[m\n" "$1"
+  }
+  if is_verbose; then
+    function verbose_print() { __verbose_print_body "$1" }
+    __verbose_print_body "$1"
+  else
+    function verbose_print() { : }
+  fi
+}
+
+function quiet_print() {
+  if is_quiet; then
+    function quiet_print() { : }
+  else
+    function quiet_print() { echo "$1" }
+    echo "$1"
+  fi
+}
+
+function assume_yes() {
+  if [[ "$assume_yes_flag" == "true" ]]; then
+    function assume_yes() { return 0 }
+    return 0
+  else
+    function assume_yes() { return 1 }
+    return 1
+  fi
+}
+
+function answer_is_yes() {
+  local answer
+  read answer
+  if [[ "$answer" =~ "^[Yy]([Ee][Ss]?)?$" ]]; then
+    return 0
+  fi
+  return 1
+}
+
+if [[ -n "${parsed_arguments[(i)-v]}" ]]; then
+  is_verbose_flag=true
+  verbose_print "Verbose Mode: on"
+  verbose_print "URL: ${url}"
+fi
+
+if [[ -n "${parsed_arguments[(i)-q]}" ]]; then
+  is_quiet_flag=true
+fi
+
+if [[ -n "${parsed_arguments[(i)-D]}" ]]; then
+  debug_mode="${parsed_arguments[-D]#=}"
+  verbose_print "Debug Mode: $debug_mode"
+fi
+
+if [[ -n "${parsed_arguments[(i)-t]}" ]]; then
+  local -r given_file_type="${parsed_arguments[-t]}"
+  if [[ "$given_file_type" == "auto" ]]; then
+    :
+  elif (( $supported_file_types[(Ie)$given_file_type] )); then
+    file_type="$given_file_type"
+  else
+    local -a message_lines=(
+      "Unsupported file type."
+      "Supported file types are below:"
+      "    ${(pj:\n    :)supported_file_types}"
+    )
+    fatal_error "${(pj:\n:)message_lines}"
+  fi
+fi
+
+if [[ -n "${parsed_arguments[(i)-d]}" ]]; then
+  local -r given_directory="${parsed_arguments[-d]#=}"
+  if [[ ! -d "$given_directory" ]]; then
+    fatal_error "No such directory: $given_directory"
+  fi
+  downloads_directory="$(cd "$given_directory" && pwd)"
+  verbose_print "Downloads Directory: $downloads_directory"
+fi
+
+if [[ -n "${parsed_arguments[(i)-y]}" ]]; then
+  assume_yes_flag=true
+  verbose_print "Automatic yes to prompts."
+fi
+
+if [[ -n "${parsed_arguments[(i)-l]}" ]]; then
+  should_leave=true
+  verbose_print "Will leave the downloaded file."
+fi
+
+################################################################################
+# Verifiers
+
+## Hash (Digest) Utils
+local -r md5_hash_name="MD5"
+local -r sha1_hash_name="SHA1"
+local -r sha256_hash_name="SHA256"
+local -r sha512_hash_name="SHA512"
+local -r -A hash_expressions=(
+  [$md5_hash_name]="[0-9A-Fa-f]{32}"
+  [$sha1_hash_name]="[0-9A-Fa-f]{40}"
+  [$sha256_hash_name]="[0-9A-Fa-f]{64}"
+  [$sha512_hash_name]="[0-9A-Fa-f]{128}"
+)
+local -r -A supported_hash_tools=(
+  [$md5_hash_name]="md5 md5sum gmd5sum openssl"
+  [$sha1_hash_name]="sha1sum gsha1sum openssl"
+  [$sha256_hash_name]="sha256sum gsha256sum openssl"
+  [$sha512_hash_name]="sha512sum gsha512sum openssl"
+)
+
+function command_exists() {
+  if command -v "$1" 1>/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+function hash_tool_exists() {
+  local -r hash_name="$1"
+  if [[ -z "${supported_hash_tools[(i)$hash_name]}" ]]; then
+    return 1
+  fi
+
+  local -r -a tools=(${(@s: :)supported_hash_tools[$hash_name]})
+  if [[ ${#tools} -eq 0 ]]; then
+    return 1
+  fi
+
+  local tool
+  for tool in $tools; do
+    if command_exists $tool; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+function extract_digest() {
+  local -r name="$1"
+  local -r line="$2"
+  local expression=""
+  if [[ -n "${hash_expressions[(i)$name]}" ]]; then
+    expression="${hash_expressions[$name]}"
+  fi
+  if [[ -z "$expression" ]]; then
+    fatal_error "Unsupported Hash Method: $name"
+  fi
+  if [[ "$line" =~ "^${expression}$" ]]; then # only hash
+    echo "$line"
+    return 0
+  elif [[ "$line" =~ "^(${expression})([[:space:]]+.+)$" ]]; then # `coreutils` format
+    echo "${match[1]}"
+    return 0
+  elif [[ "$line" =~ "^${name}[[:space:]]*\(.+\)[[:space:]]*=[[:space:]]*(${expression})$" ]]; then # BSD style
+    echo "${match[1]}"
+    return 0
+  fi
+  fatal_error "Unexpected Foramt for ${name}: $line"
+}
+
+function md5_digest() {
+  local -r filename="$1"
+  if [[ ! -f "$filename" ]]; then
+    fatal_error "No such file: $filename"
+  fi
+
+  if command_exists md5; then
+    echo $(extract_digest "$md5_hash_name" "$(md5 "$filename")")
+    return 0
+  elif command_exists md5sum; then
+    echo $(extract_digest "$md5_hash_name" "$(md5sum "$filename")")
+    return 0
+  elif command_exists gmd5sum; then
+    echo $(extract_digest "$md5_hash_name" "$(gmd5sum "$filename")")
+    return 0
+  elif command_exists openssl; then
+    echo $(extract_digest "$md5_hash_name" "$(openssl dgst -md5 "$filename")")
+    return 0
+  fi
+  fatal_error "MD5 Hash tool not found"
+}
+
+function sha1_digest() {
+  local -r filename="$1"
+  if [[ ! -f "$filename" ]]; then
+    fatal_error "No such file: $filename"
+  fi
+
+  if command_exists sha1sum; then
+    echo $(extract_digest "$sha1_hash_name" "$(sha1sum "$filename")")
+    return 0
+  elif command_exists gsha1sum; then
+    echo $(extract_digest "$sha1_hash_name" "$(gsha1sum "$filename")")
+    return 0
+  elif command_exists openssl; then
+    echo $(extract_digest "$sha1_hash_name" "$(openssl dgst -sha1 "$filename")")
+    return 0
+  fi
+  fatal_error "SHA1 Hash tool not found"
+}
+
+function sha256_digest() {
+  local -r filename="$1"
+  if [[ ! -f "$filename" ]]; then
+    fatal_error "No such file: $filename"
+  fi
+
+  if command_exists sha256sum; then
+    echo $(extract_digest "$sha256_hash_name" "$(sha256sum "$filename")")
+    return 0
+  elif command_exists gsha256sum; then
+    echo $(extract_digest "$sha256_hash_name" "$(gsha256sum "$filename")")
+    return 0
+  elif command_exists openssl; then
+    echo $(extract_digest "$sha256_hash_name" "$(openssl dgst -sha256 "$filename")")
+    return 0
+  fi
+  fatal_error "SHA256 Hash tool not found"
+}
+
+function sha512_digest() {
+  local -r filename="$1"
+  if [[ ! -f "$filename" ]]; then
+    fatal_error "No such file: $filename"
+  fi
+
+  if command_exists sha512sum; then
+    echo $(extract_digest "$sha512_hash_name" "$(sha512sum "$filename")")
+    return 0
+  elif command_exists gsha512sum; then
+    echo $(extract_digest "$sha512_hash_name" "$(gsha512sum "$filename")")
+    return 0
+  elif command_exists openssl; then
+    echo $(extract_digest "$sha512_hash_name" "$(openssl dgst -sha512 "$filename")")
+    return 0
+  fi
+  fatal_error "SHA512 Hash tool not found"
+}
+
+function digest() {
+  local -r hash_name="$1"
+  local -r file_path="$2"
+
+  case "$hash_name" in
+    $md5_hash_name)
+      md5_digest "$file_path"
+      ;;
+    $sha1_hash_name)
+      sha1_digest "$file_path"
+      ;;
+    $sha256_hash_name)
+      sha256_digest "$file_path"
+      ;;
+    $sha512_hash_name)
+      sha512_digest "$file_path"
+      ;;
+    *)
+      fatal_error "Digest Failed: Unexpected Hash Name: $hash_name"
+      ;;
+  esac
+}
+
+## Determine Verifiers
+local -r pgp_verifier_key="PGP"
+local -A verifiers=()
+function determine_hash() {
+  local -r flag_name="$1"
+  local -r hash_name="$2"
+
+  if [[ -z "${parsed_arguments[(i)$flag_name]}" ]]; then
+    return 0
+  fi
+
+  if ! hash_tool_exists $hash_name; then
+    fatal_error "Hash tool for $hash_name is not found."
+  fi
+
+  local -r flag_value="${parsed_arguments[$flag_name]#=}"
+  local hash_value=""
+  if [[ "$flag_value" =~ "^${hash_expressions[$hash_name]}$" ]]; then
+    hash_value="$flag_value"
+  else
+    if [[ ! "$flag_value" =~ "^(https?|file|ftp)://" ]]; then
+      fatal_error "Invalid Argument: $flag_name \"$flag_value\""
+    fi
+    verbose_print "Fetch $hash_name Digest..."
+    hash_value=$(extract_digest "$hash_name" "$(curl -L -s "$flag_value")")
+  fi
+  verifiers[$hash_name]="$hash_value"
+  verbose_print "Expected $hash_name Hash: ${verifiers[$hash_name]}"
+}
+determine_hash --md5 $md5_hash_name
+determine_hash --sha1 $sha1_hash_name
+determine_hash --sha256 $sha256_hash_name
+determine_hash --sha512 $sha512_hash_name
+
+## PGP
+local -r -a pgp_tools=(gpg)
+
+function pgp_tool_exists() {
+  local tool
+  for tool in $pgp_tools; do
+    if command_exists $tool; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+function pgp_verify() {
+  local -r filename="$1"
+  local -r signature_filename="$2"
+
+  if command_exists gpg; then
+    local gpg_exit_status=-1
+    if is_verbose; then
+      gpg --verify "$signature_filename" "$filename"
+      gpg_exit_status=$?
+    else
+      gpg --quiet --verify "$signature_filename" "$filename" 1>/dev/null 2>&1
+      gpg_exit_status=$?
+    fi
+    return $gpg_exit_status
+  fi
+  fatal_error "PGP tool not found"
+}
+
+if [[ -n "${parsed_arguments[(i)--pgp]}" ]]; then
+  if ! pgp_tool_exists; then
+    fatal_error "PGP tool not found"
+  fi
+
+  local -r pgp_signature_url="${parsed_arguments[--pgp]}"
+  verbose_print "PGP Signature URL: $pgp_signature_url"
+  verifiers[$pgp_verifier_key]="$pgp_signature_url"
+fi
+
+## Require verifiers?
+if [[ ${#verifiers} -eq 0 ]]; then
+  if [[ -z "$debug_mode" ]]; then
+    warn "No verifiers were given."
+    if ! assume_yes; then
+      echo "Are you sure you want to download the file? [y/n]" 1>&2
+      if ! answer_is_yes; then
+        verbose_print "Aborted."
+        exit 0
+      fi
+    fi
+  fi
+fi
+
+
+################################################################################
+# Challenge: Fetch HTTP Header
+local http_status_code
+local content_type
+local content_type_core
+function () {
+  local response_info_string
+  local curl_exit_status=0
+  if [[ -z "$debug_mode" || "$debug_mode" =~ "^(server|file)_not_found$" ]]; then
+    set +e
+    verbose_print "Fetch HTTP Header of \"$url\"..."
+    response_info_string=$(
+      curl -I -L "$url" -o /dev/null -s -w '%{http_code}:%{content_type}\n'
+    )
+    curl_exit_status=$(( 0 + $? ))
+    set -e
+  else
+    if [[ "$debug_mode" =~ "^file_type:(.+)$" ]]; then
+      response_info_string="200:${match[1]}"
+    else 
+      response_info_string="200:application/octet-stream"
+    fi
+  fi
+  local -a response_info=(${(@s/:/)response_info_string})
+  http_status_code=${response_info[1]}
+  content_type=${response_info[2]:-}
+  content_type_core=${content_type%%;*}
+
+  verbose_print "HTTP Status Code: $http_status_code"
+  verbose_print "Content-Type: $content_type"
+  verbose_print "Content-Type without parameters: $content_type_core"
+
+  ## Check the status code
+  function () {
+    if [[ ! "$http_status_code" =~ "^[0-9]+$" ]]; then
+      fatal_error "Invalid HTTP Status Code: $http_status_code"
+    fi
+    http_status_code=$(( 0 + $http_status_code ))
+    if [[ $http_status_code -eq 0 ]]; then
+      if [[ $curl_exit_status -ne 0 ]]; then
+        fatal_error "Server not found"
+      elif [[ "$url" =~ "^file://" ]]; then
+        return 0
+      fi
+    fi
+    if [[ $(( $http_status_code / 100 )) -ne 2 ]]; then
+      fatal_error "Cannot download: HTTP Status Code is $http_status_code" 1>&2
+    fi
+    return 0
+  }
+}
+
+################################################################################
+# Determine file type
+set +e
+local -r last_path_component="${${${url%%\?*}%/}##*/}"
+verbose_print "Last Path Component: $last_path_component"
+function () {
+  if [[ -n "$file_type" ]]; then
+    return 0
+  fi
+
+  for supported in $supported_file_types; do
+    if [[ "$last_path_component" == *"$supported" ]]; then
+      file_type="$supported"
+      return 0
+    fi
+  done
+  case "$content_type_core" in
+    #TODO: There must be more appropriate ways...
+    application/x-bzip2)
+      file_type=$tar_bz2_file_type
+      return 0
+      ;;
+    application/gzip)
+      file_type=$tgz_file_type
+      return 0
+      ;;
+    application/x-xz)
+      file_type=$tar_xz_file_type
+      return 0
+      ;;
+    application/x-compress)
+      file_type=$tar_Z_file_type
+      return 0
+      ;;
+    application/zip)
+      file_type=$zip_file_type
+      return 0
+      ;;
+  esac
+  return 1
+}
+if [[ $? -ne 0 || -z "$file_type" ]]; then
+  fatal_error "Unsupported or undeterminable file type"
+fi
+verbose_print "Determined File Type: $file_type"
+if [[ "$debug_mode" =~ "^file_type" ]]; then
+  echo "$file_type"
+  exit 0
+fi
+set -e
+
+################################################################################
+# Let's download!
+local -r filename=$({
+  if [[ -n "$last_path_component" ]]; then
+    echo "$last_path_component"
+  else
+    # reachable?
+    # Random string for filename...
+    echo "$(head /dev/urandom | LC_ALL=C tr -dc A-Z0-9 | head -c 24)${file_type}"
+  fi
+})
+local -r local_file_path="${downloads_directory}/$filename"
+verbose_print "Local File Path: $local_file_path"
+
+if [[ -f "$local_file_path" ]] then
+  warn "File already exists at \"$local_file_path\""
+  if ! assume_yes; then
+    echo "Are you sure you want to download and overwrite the file? [y/n]"
+    if ! answer_is_yes; then
+      verbose_print "Aborted."
+      exit 0
+    fi
+  fi
+fi
+
+if is_quiet; then
+  curl -s -L "$url" -o "$local_file_path"
+else
+  curl -L "$url" -o "$local_file_path"
+fi
+
+################################################################################
+# Verify
+
+local number_of_verification_failures=0
+
+## Hash
+function compare_hash() {
+  local -r hash_name="$1"
+  if [[ -z "${verifiers[(i)$hash_name]}" ]]; then
+    return 0
+  fi
+
+  verbose_print "Compare $hash_name checksum..."
+  local -r -l expected_hash_value="${verifiers[$hash_name]}"
+  local -r -l actual_hash_value=$(digest "$hash_name" "$local_file_path")
+  if [[ "$expected_hash_value" == "$actual_hash_value" ]]; then
+    quiet_print "$hash_name: ✅ OK" 1>&2
+  else
+    number_of_verification_failures=$(( $number_of_verification_failures + 1 ))
+    quiet_print "$hash_name: ❌ NG" 1>&2
+    quiet_print "  Expected \"$expected_hash_value\", but got \"$actual_hash_value\"" 1>&2
+  fi
+}
+function () {
+  local hash_name
+  for hash_name ("$md5_hash_name" "$sha1_hash_name" "$sha256_hash_name"); do
+    compare_hash $hash_name
+  done
+}
+
+## PGP
+function () {
+  if [[ -n "${verifiers[(i)$pgp_verifier_key]}" ]]; then
+    local -r pgp_signature_url="${verifiers[$pgp_verifier_key]}"
+    verbose_print "Fetch PGP Signature..."
+    
+    local pgp_signature_ext
+    if [[ "$pgp_signature_url" == *.sig ]]; then
+      pgp_signature_ext="sig"
+    else
+      pgp_signature_ext="asc"
+    fi
+    local -r pgp_signature_filename="${last_path_component}.${pgp_signature_ext}"
+    local -r pgp_signature_file_path="$(dirname "$local_file_path")/$pgp_signature_filename"
+
+    curl -s -L "$pgp_signature_url" -o "$pgp_signature_file_path"
+
+    if pgp_verify "$local_file_path" "$pgp_signature_file_path"; then
+      quiet_print "PGP: ✅ OK" 1>&2
+    else
+      number_of_verification_failures=$(( $number_of_verification_failures + 1 ))
+      quiet_print "PGP: ❌ NG" 1>&2
+    fi
+  fi
+}
+
+## Results
+if [[ $number_of_verification_failures -ne 0 ]]; then
+  fatal_error_dont_exit "$number_of_verification_failures of ${#verifiers} verification test(s) failed."
+  if assume_yes; then
+    rm "$local_file_path"
+  else
+    echo "Do you want to remove the downloaded file? [y/n]" 1>&2
+    if answer_is_yes; then
+      rm "$local_file_path"
+    fi
+  fi
+  exit 1
+fi
+
+################################################################################
+# Extract
+
+verbose_print "Extract files..."
+function () {
+  cd "$downloads_directory"
+  case "$file_type" in
+    "$tar_bz2_file_type" | "$tar_gz_file_type" | "$tgz_file_type" | "$tar_xz_file_type" | "$tar_Z_file_type")
+      if is_quiet; then
+        tar -xf "$local_file_path"
+        return $?
+      else
+        tar -xvf "$local_file_path"
+        return $?
+      fi
+      ;;
+    "$zip_file_type")
+      if is_quiet; then
+        unzip -q "$local_file_path"
+        return $?
+      else
+        unzip -v "$local_file_path"
+        return $?
+      fi
+      ;;
+    *) 
+      fatal_error "Unreachable"
+      ;;
+  esac
+}
+local -r extractor_exit_status=$?
+
+if [[ "$should_leave" != "true" ]]; then
+  rm "$local_file_path"
+fi
+
+if [[ $extractor_exit_status -ne 0 ]]; then
+  verbose_print "Extracting failed."
+  return $extractor_exit_status
+fi
+return 0

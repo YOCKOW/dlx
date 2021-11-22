@@ -1,0 +1,21 @@
+#!/usr/bin/env zsh
+
+################################################################################
+# test-errors
+#   © 2021 YOCKOW.
+#     Licensed under MIT License.
+#     See "LICENSE.txt" for more information.
+################################################################################
+
+set -u
+
+server_not_found=$(dlx https://NEVER-FIND.YOCKOW.JP/ --debug server_not_found 2>&1 1>/dev/null)
+SSTAssertMatch "$server_not_found" "Server not found" -l ${(%):-%I}
+
+file_not_found=$(dlx https://Bot.YOCKOW.jp/NEVER-FIND --debug file_not_found 2>&1 1>/dev/null)
+SSTAssertMatch "$file_not_found" "Cannot download: HTTP Status Code is 404" -l ${(%):-%I}
+
+unsupported_file_type=$(dlx https://Bot.YOCKOW.jp/file.unsupported --debug file_type 2>&1 1>/dev/null)
+SSTAssertMatch "$unsupported_file_type" "Unsupported or undeterminable file type" -l ${(%):-%I}
+
+return 0

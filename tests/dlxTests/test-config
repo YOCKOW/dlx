@@ -1,0 +1,24 @@
+#!/usr/bin/env zsh
+
+################################################################################
+# test-config
+#   © 2021 YOCKOW.
+#     Licensed under MIT License.
+#     See "LICENSE.txt" for more information.
+################################################################################
+
+set -u
+
+# File Type
+SSTAssertStringEqual "$(dlx https://example.com/file.tar.bz2 --debug file_type)" .tar.bz2 -l ${(%):-%I}
+SSTAssertStringEqual "$(dlx https://example.com/file.tar.gz --debug file_type)" .tar.gz -l ${(%):-%I}
+SSTAssertStringEqual "$(dlx https://example.com/file.tar.xz --debug file_type)" .tar.xz -l ${(%):-%I}
+SSTAssertStringEqual "$(dlx https://example.com/file.tar.Z --debug file_type)" .tar.Z -l ${(%):-%I}
+SSTAssertStringEqual "$(dlx 'https://example.com/file.zip?name1=value1&name2=value2#fragment' --debug file_type)" .zip -l ${(%):-%I}
+SSTAssertStringEqual "$(dlx 'https://example.com/file-without-extension' --debug file_type:application/zip)" .zip -l ${(%):-%I}
+SSTAssertStringEqual "$(dlx 'https://example.com/file-without-extension' --debug file_type:application/zip)" .zip -l ${(%):-%I}
+## Local Files
+SSTAssertStringEqual "$(dlx "file://${DLX_TEST_ASSETS_DIR}/files.tar.bz2" --debug file_type)" .tar.bz2 -l ${(%):-%I}
+SSTAssertStringEqual "$(dlx "file://${DLX_TEST_ASSETS_DIR}/files.zip" --debug file_type)" .zip -l ${(%):-%I}
+
+return 0
