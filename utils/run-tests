@@ -18,10 +18,7 @@ local has_public_key=true
 if ! gpg --list-keys $public_key_id 1>/dev/null 2>&1; then
   echo "Import YOCKOW's Public Key (Temporarily)"
   has_public_key=false
-
-  pub_key_file=$(mktemp)
-  curl -s -L "https://GitHub.com/YOCKOW.gpg" -o "$pub_key_file"
-  gpg --import "$pub_key_file"
+  gpg --fetch-keys "https://GitHub.com/YOCKOW.gpg"
 fi
 
 SSTest "${repo_dir}/tests"
