@@ -21,8 +21,12 @@ if ! gpg --list-keys $public_key_id 1>/dev/null 2>&1; then
   gpg --fetch-keys "https://GitHub.com/YOCKOW.gpg"
 fi
 
+local test_result=-1
 SSTest "${repo_dir}/tests"
+test_result=$?
 
 if [[ "$has_public_key" != "true" && ! -v GITHUB_ACTIONS ]]; then
   gpg --yes --delete-keys $public_key_id
 fi
+
+return $test_result
