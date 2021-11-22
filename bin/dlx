@@ -474,7 +474,7 @@ if [[ -n "${parsed_arguments[(i)--pgp]}" ]]; then
     fatal_error "PGP tool not found"
   fi
 
-  local -r pgp_signature_url="${parsed_arguments[--pgp]}"
+  local -r pgp_signature_url="${parsed_arguments[--pgp]#=}"
   verbose_print "PGP Signature URL: $pgp_signature_url"
   verifiers[$pgp_verifier_key]="$pgp_signature_url"
 fi
@@ -670,10 +670,18 @@ function () {
     else
       pgp_signature_ext="asc"
     fi
-    local -r pgp_signature_filename="${last_path_component}.${pgp_signature_ext}"
-    local -r pgp_signature_file_path="$(dirname "$local_file_path")/$pgp_signature_filename"
 
+    local -r pgp_signature_filename="${last_path_component}.${pgp_signature_ext}"
+    local -r pgp_signature_file_path="$(mktemp -d)/$pgp_signature_filename"
+
+    set +e
     curl -s -L "$pgp_signature_url" -o "$pgp_signature_file_path"
+    if [[ $? -eq 0 && -f "$pgp_signature_file_path" ]]; then
+      verbose_print "PGP Signature was downloaded at \"$pgp_signature_file_path\""
+    else
+      fatal_error "Cannot fetch PGP Signature from \"$pgp_signature_url\""
+    fi
+    set -e
 
     if pgp_verify "$local_file_path" "$pgp_signature_file_path"; then
       quiet_print "PGP: ✅ OK" 1>&2
