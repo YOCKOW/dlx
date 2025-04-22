@@ -1,0 +1,13 @@
+#!/usr/bin/env zsh
+
+################################################################################
+# finalize
+#   © 2025 YOCKOW.
+#     Licensed under MIT License.
+#     See "LICENSE.txt" for more information.
+################################################################################
+
+if [[ "${(L)DLX_HAS_YOCKOW_PUBLIC_KEY}" != "true"  && ! -v GITHUB_ACTIONS ]]; then
+  echo "Delete YOCKOW's Public Key" 1>&2
+  gpg --yes --delete-keys "$DLX_YOCKOW_PUBLIC_KEY_ID"
+fi
