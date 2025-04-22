@@ -23,17 +23,6 @@ jobs:
         os:
           - ubuntu-latest
           - macOS-latest
-    runs-on: ${{ matrix.os }}
-    steps:
-    - uses: actions/checkout@v2
-    - name: Install zsh
-      if: runner.os == 'Linux'
-      run: |
-        sudo apt update
-        sudo apt install zsh
-    - name: Run Tests
-      run: make test
-    - name: Install dlx
-      run: |
-        sudo make install
-        which dlx
+    uses: YOCKOW/SSTest/.github/workflows/reusable-SSTest.yml@main
+    with:
+      os: ${{ matrix.os }}

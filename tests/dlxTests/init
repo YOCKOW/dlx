@@ -7,14 +7,25 @@
 #     See "LICENSE.txt" for more information.
 ################################################################################
 
-dlxTests_dir=$(cd "$(dirname "$0")" && pwd)
-tests_dir=$(dirname "$dlxTests_dir")
-repo_dir=$(dirname "$tests_dir")
-dlx_bin_dir="${repo_dir}/bin"
-dlx_test_assets_dir="${repo_dir}/test-assets"
+local -r dlxTests_dir=$(cd "$(dirname "$0")" && pwd)
+local -r tests_dir=$(dirname "$dlxTests_dir")
+local -r repo_dir=$(dirname "$tests_dir")
+local -r dlx_bin_dir="${repo_dir}/bin"
+local -r dlx_test_assets_dir="${repo_dir}/test-assets"
 
 PATH="${dlx_bin_dir}:$PATH"
+
+# Import YOCKOW's Public Key
+local -r public_key_id="01F76899E9C1E5B003169A23BEEDB9712A367313"
+local has_public_key=true
+if ! gpg --list-keys $public_key_id 1>/dev/null 2>&1; then
+  echo "Import YOCKOW's Public Key (Temporarily)" 1>&2
+  has_public_key=false
+  gpg --fetch-keys "https://GitHub.com/YOCKOW.gpg"
+fi
 
 SSTExport PATH "$PATH"
 SSTExport DLX_REPOSITORY_DIR "$repo_dir"
 SSTExport DLX_TEST_ASSETS_DIR "$dlx_test_assets_dir"
+SSTExport DLX_YOCKOW_PUBLIC_KEY_ID "$public_key_id"
+SSTExport DLX_HAS_YOCKOW_PUBLIC_KEY "$has_public_key"
